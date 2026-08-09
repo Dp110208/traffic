@@ -3,7 +3,9 @@
 Detects license plates in video, reads them, validates them against Indian and German plate
 grammars, and logs **one deduplicated row per vehicle** to an Excel workbook.
 
-> **Status:** Phase 0 of 9 — foundation. See [ROADMAP.md](ROADMAP.md) for the full plan.
+> **Status:** Phase 1 of 9 — the dataset pipeline is built and tested; the dataset itself is not
+> assembled yet (that needs the source downloads run on Colab).
+> See [ROADMAP.md](ROADMAP.md) for the full plan.
 
 ## Pipeline
 

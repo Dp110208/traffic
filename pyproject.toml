@@ -15,6 +15,9 @@ dependencies = [
     "numpy>=1.26",
     "pandas>=2.2",
     "pyyaml>=6.0",
+    # Ultralytics pulls this in, but alpr.data.ingest imports it directly to
+    # read image dimensions from headers — declared so it is not an accident.
+    "pillow>=10.0",
 ]
 
 [project.optional-dependencies]
