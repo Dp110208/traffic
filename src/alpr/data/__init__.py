@@ -6,7 +6,7 @@ a committed config rather than from whatever was in a Colab session.
 """
 
 from alpr.data.export import CLASS_NAMES, ExportResult, export_yolo, format_label_file
-from alpr.data.ingest import IngestReport, from_yolo_dir, image_size
+from alpr.data.ingest import IngestReport, from_roboflow_export, from_yolo_dir, image_size
 from alpr.data.manifest import iter_manifest, read_manifest, write_manifest
 from alpr.data.schema import (
     DatasetError,
@@ -39,6 +39,7 @@ __all__ = [
     "compute_stats",
     "export_yolo",
     "format_label_file",
+    "from_roboflow_export",
     "from_yolo_dir",
     "image_size",
     "iter_manifest",

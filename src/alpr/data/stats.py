@@ -126,12 +126,17 @@ def check_exit_criteria(
     stats: DatasetStats,
     *,
     min_plates: int = 1000,
-    required_regions: Sequence[Region] = (Region.INDIA, Region.GERMANY),
+    required_regions: Sequence[Region] = (Region.INDIA, Region.EUROPE),
 ) -> list[str]:
     """Return the Phase 1 exit criteria that are not met yet.
 
     Returns a list of failures rather than raising, so the notebook can print
     the whole picture instead of stopping at the first shortfall.
+
+    `required_regions` asks for India and Europe, not India and Germany: the
+    openly-licensed European set is pan-European, and demanding a `DE` tag
+    would fail on data that is perfectly good for training a detector. German
+    plate handling is Phase 5's grammar, which needs no training data.
     """
     failures = []
     if stats.plates < min_plates:
