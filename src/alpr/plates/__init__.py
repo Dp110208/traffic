@@ -19,6 +19,7 @@ from alpr.plates.correct import (
     DIGIT_TO_LETTERS,
     EDIT_PENALTY,
     LETTER_TO_DIGITS,
+    MIN_CONFIDENCE,
     alternatives,
     correct_to_format,
     parse_plate,
@@ -37,7 +38,13 @@ FORMATS_BY_REGION: dict[Region, PlateFormat] = {
 }
 
 
-def parse(raw: str, *, region: Region | None = None, max_edits: int = 2) -> PlateMatch | None:
+def parse(
+    raw: str,
+    *,
+    region: Region | None = None,
+    max_edits: int = 2,
+    min_confidence: float = MIN_CONFIDENCE,
+) -> PlateMatch | None:
     """Parse a raw OCR string against every known grammar.
 
     Args:
@@ -45,11 +52,16 @@ def parse(raw: str, *, region: Region | None = None, max_edits: int = 2) -> Plat
         region: restrict to one country's grammar. Set it when the deployment
             site is known — it stops an Indian reading winning on a German road.
         max_edits: how many OCR confusions may be repaired.
+        min_confidence: floor below which a reading is discarded. Noise can
+            be corrected into something plausible, and a false plate in the
+            log is worse than a missed one.
 
     Returns:
         The best match, or None when nothing fits.
     """
-    return parse_plate(raw, FORMATS, region=region, max_edits=max_edits)
+    return parse_plate(
+        raw, FORMATS, region=region, max_edits=max_edits, min_confidence=min_confidence
+    )
 
 
 def format_display(match: PlateMatch) -> str:
@@ -67,6 +79,7 @@ __all__ = [
     "GERMANY",
     "INDIA",
     "LETTER_TO_DIGITS",
+    "MIN_CONFIDENCE",
     "STATE_CODES",
     "GermanyFormat",
     "IndiaFormat",

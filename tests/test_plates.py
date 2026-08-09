@@ -309,6 +309,25 @@ class TestParse:
         for junk in ("", "!!!", "ZZZ", "hello world"):
             assert parse(junk) is None
 
+    def test_rejects_noise_corrected_into_a_plausible_plate(self):
+        # "hello" uppercases to HELLO, and O->0 turns it into HEL-L 0 — a
+        # structurally valid German plate. It scores 0.62 (unknown district,
+        # one edit), below the floor. A false plate in the log is worse than
+        # a missed one.
+        assert parse("hello") is None
+        assert parse("hello", min_confidence=0.0) is not None
+
+    def test_confidence_is_rounded_for_display(self):
+        # The value goes into a spreadsheet cell; 0.8200000000000001 is not
+        # something to show a user.
+        match = parse("MH12A81234")
+        assert match.confidence == 0.82
+
+    def test_a_corrected_known_code_clears_the_floor(self):
+        # The floor must not reject genuine repairs — only noise.
+        assert parse("MH12A81234") is not None  # 0.82
+        assert parse("DAXY1Z3") is not None  # 0.82
+
     def test_correction_and_normalization_compose(self):
         # Separators stripped, then the 8-shaped B and Z-shaped 2 repaired.
         match = parse("MH 12 AB 8Z34")

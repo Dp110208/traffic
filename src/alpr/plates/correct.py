@@ -59,8 +59,17 @@ def alternatives(char: str) -> str:
     return DIGIT_TO_LETTERS.get(char, "") or LETTER_TO_DIGITS.get(char, "")
 
 
+# A reading that is *both* corrected and has an unrecognized region code is
+# too weak to trust: 0.80 (unknown district) − 0.18 (one edit) = 0.62 is what
+# "hello" scores after O→0 turns it into the plausible-looking HEL-L 0. Every
+# genuine reading observed sits at 0.80 or above.
+MIN_CONFIDENCE = 0.7
+
+
 def _score(match: PlateMatch, edits: int) -> float:
-    return max(0.0, match.confidence - edits * EDIT_PENALTY)
+    # Rounded because the value lands in a spreadsheet cell, and
+    # 0.8200000000000001 is not something to show a user.
+    return round(max(0.0, match.confidence - edits * EDIT_PENALTY), 3)
 
 
 def correct_to_format(
@@ -142,6 +151,7 @@ def parse_plate(
     *,
     region: Region | None = None,
     max_edits: int = 2,
+    min_confidence: float = MIN_CONFIDENCE,
 ) -> PlateMatch | None:
     """Parse a raw OCR string against the given grammars.
 
@@ -152,6 +162,10 @@ def parse_plate(
             deployment site is known — it removes the chance of an Indian
             reading winning on a German road.
         max_edits: passed through to `correct_to_format`.
+        min_confidence: floor below which a match is discarded. Grammars are
+            permissive enough that noise can be corrected into something
+            plausible — "hello" becomes HEL-L 0 once O→0 is applied — and a
+            false plate in the log is worse than a missed one.
 
     Returns:
         The highest-confidence match across the grammars, or None.
@@ -173,4 +187,7 @@ def parse_plate(
             continue
         if best is None or (found.confidence, -found.edits) > (best.confidence, -best.edits):
             best = found
+
+    if best is not None and best.confidence < min_confidence:
+        return None
     return best
