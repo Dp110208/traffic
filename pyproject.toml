@@ -15,14 +15,27 @@ dependencies = [
     "numpy>=1.26",
     "pandas>=2.2",
     "pyyaml>=6.0",
+    # Ultralytics pulls this in, but alpr.data.ingest imports it directly to
+    # read image dimensions from headers — declared so it is not an accident.
+    "pillow>=10.0",
 ]
 
 [project.optional-dependencies]
-# PaddlePaddle's GPU build is CUDA-only and has no macOS wheel, so this extra
-# is Colab-only by construction. Local checkouts stay light and skip OCR tests.
+# OCR stack. Colab-only by construction: PaddlePaddle's GPU build is CUDA-only
+# and has no macOS wheel.
+#
+# NOT installable from PyPI alone, and deliberately left out of the bootstrap
+# notebook. PyPI's paddlepaddle-gpu stops at 2.6.2, while current paddleocr
+# (3.x) requires PaddlePaddle 3.x, whose GPU wheels are published on Paddle's
+# own index. Installing this extra needs that index:
+#
+#   pip install paddlepaddle-gpu -i https://www.paddlepaddle.org.cn/packages/stable/cu126/
+#   pip install -e ".[gpu]"
+#
+# Phase 4 pins the exact working pair once it has been run on a T4. Until then
+# nothing imports paddle, so nothing before Phase 4 is blocked by this.
 gpu = [
-    "paddlepaddle-gpu>=2.6",
-    "paddleocr>=2.9",
+    "paddleocr>=3.0",
 ]
 # Local live-camera modes (Phase 9). Needs the GUI build of OpenCV, which
 # conflicts with the headless wheel above, so it is never installed alongside gpu.

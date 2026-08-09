@@ -8,6 +8,7 @@ in its first cell so that mistake surfaces in seconds instead.
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -80,3 +81,62 @@ def require_gpu() -> GpuInfo:
         )
         raise RuntimeError(f"No CUDA GPU visible. {hint}")
     return gpus[0]
+
+
+KAGGLE_TOKEN_VAR = "KAGGLE_API_TOKEN"
+ROBOFLOW_KEY_VAR = "ROBOFLOW_API_KEY"
+
+
+class MissingCredential(RuntimeError):
+    """A required API credential is not available in this runtime."""
+
+
+def get_credential(name: str) -> str:
+    """Fetch an API credential from Colab's secret store or the environment.
+
+    There is deliberately **no hardcoded fallback**. A key written as a string
+    literal is a key in git history, and this repository is public — GitHub
+    keeps pushed objects reachable long after the commit is amended away, so
+    such a leak is effectively permanent and the key must be rotated. Colab's
+    secret store (the 🔑 panel) keeps the value out of both the notebook and
+    the repo.
+
+    Raises:
+        MissingCredential: when the credential is set nowhere.
+    """
+    if in_colab():
+        try:
+            from google.colab import userdata
+
+            value = userdata.get(name)
+            if value:
+                return value
+        except Exception:
+            # Secret not granted to this notebook, or no secret store at all.
+            # Fall through to the environment rather than failing here.
+            pass
+
+    value = os.environ.get(name)
+    if value:
+        return value
+
+    raise MissingCredential(
+        f"{name} is not set. In Colab: open the 🔑 Secrets panel in the left "
+        f"sidebar, add {name}, and switch on notebook access. Locally: export "
+        f"it in your shell. Never paste it into a cell — the value would be "
+        f"saved into the notebook and committed."
+    )
+
+
+def setup_api_keys() -> None:
+    """Load the Phase 1 dataset credentials into the environment.
+
+    The Kaggle and Roboflow clients both read their credentials from the
+    environment, so this makes them available without either key appearing in
+    a notebook cell.
+
+    Raises:
+        MissingCredential: naming the first credential that is not configured.
+    """
+    for name in (KAGGLE_TOKEN_VAR, ROBOFLOW_KEY_VAR):
+        os.environ[name] = get_credential(name)
