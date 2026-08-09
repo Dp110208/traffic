@@ -28,13 +28,37 @@ def _cmd_env(_: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_train(args: argparse.Namespace) -> int:
+    # Imported here so `alpr env` does not pay for loading torch.
+    from alpr.train import TrainConfig, TrainingError, train
+
+    try:
+        config = TrainConfig.from_yaml(args.config)
+        train(config, args.data, require_gpu=not args.allow_cpu)
+    except TrainingError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="alpr", description=__doc__)
     parser.add_argument("--version", action="version", version=f"alpr {__version__}")
 
     sub = parser.add_subparsers(dest="command", required=True)
+
     env = sub.add_parser("env", help="report interpreter, Colab, and GPU status")
     env.set_defaults(func=_cmd_env)
+
+    train_cmd = sub.add_parser("train", help="train the plate detector")
+    train_cmd.add_argument("--config", default="configs/detector.yaml", help="training config")
+    train_cmd.add_argument("--data", default="data/yolo/data.yaml", help="dataset config")
+    train_cmd.add_argument(
+        "--allow-cpu",
+        action="store_true",
+        help="do not require a CUDA GPU (a CPU run will not finish; for smoke tests only)",
+    )
+    train_cmd.set_defaults(func=_cmd_train)
 
     return parser
 
