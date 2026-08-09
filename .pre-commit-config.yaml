@@ -13,6 +13,14 @@ repos:
     hooks:
       - id: nbstripout
 
+  # This repo is public, and a pushed secret stays reachable on GitHub long
+  # after the commit is amended away. An API key was very nearly committed
+  # here on 2026-08-09; this hook is the guardrail that would have caught it.
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.0
+    hooks:
+      - id: gitleaks
+
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:

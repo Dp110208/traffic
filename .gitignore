@@ -31,7 +31,10 @@ runs/
 *.avi
 !tests/fixtures/*.mp4
 
-# OS / editor
+# OS / editor / env secrets
+.env
+.env.*
 .DS_Store
 .vscode/
 .idea/
+
