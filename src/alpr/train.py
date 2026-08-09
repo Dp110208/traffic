@@ -235,19 +235,56 @@ def train(
     # which costs seconds, and `alpr env` should stay instant.
     from ultralytics import YOLO
 
-    run_dir = Path(config.project) / config.name
-    run_dir.mkdir(parents=True, exist_ok=True)
-    (run_dir / "provenance.json").write_text(
-        json.dumps(provenance(config, data_yaml), indent=2), encoding="utf-8"
-    )
+    record = provenance(config, data_yaml)
 
     model = YOLO(config.model)
-    return model.train(**config.to_ultralytics(data_yaml))
+    results = model.train(**config.to_ultralytics(data_yaml))
+
+    # Ultralytics decides the real output directory itself, and it does not
+    # always equal `project/name`: with a relative `project` it can resolve
+    # against its own configured runs_dir, producing e.g.
+    # runs/detect/runs/detect/plates. Writing provenance to a reconstructed
+    # path put it in an empty directory while the weights landed elsewhere,
+    # which defeats the point of recording it. Take the directory from the
+    # results object instead of guessing.
+    run_dir = run_directory(results, config)
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "provenance.json").write_text(json.dumps(record, indent=2), encoding="utf-8")
+
+    return results
 
 
-def best_weights(config: TrainConfig) -> Path:
-    """Path to the best checkpoint of a finished run."""
-    path = Path(config.project) / config.name / "weights" / "best.pt"
-    if not path.exists():
-        raise TrainingError(f"no trained weights at {path} — has training finished?")
-    return path
+def run_directory(results, config: TrainConfig) -> Path:
+    """Where Ultralytics actually wrote a run."""
+    save_dir = getattr(results, "save_dir", None)
+    if save_dir:
+        return Path(save_dir)
+    return Path(config.project) / config.name
+
+
+def best_weights(config: TrainConfig, results=None) -> Path:
+    """Path to the best checkpoint of a finished run.
+
+    Prefers the directory Ultralytics reports. Failing that, searches the
+    project tree for the most recent `best.pt` — reconstructing
+    `project/name` is not reliable, since Ultralytics may nest the run
+    directory or suffix the name when one already exists.
+    """
+    if results is not None:
+        candidate = run_directory(results, config) / "weights" / "best.pt"
+        if candidate.exists():
+            return candidate
+
+    root = Path(config.project)
+    matches = sorted(
+        root.glob("**/weights/best.pt"),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    if matches:
+        return matches[0]
+
+    raise TrainingError(
+        f"no trained weights found under {root} — has training finished? "
+        "(searched **/weights/best.pt)"
+    )

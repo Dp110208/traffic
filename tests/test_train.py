@@ -17,6 +17,7 @@ from alpr.train import (
     TrainingError,
     best_weights,
     provenance,
+    run_directory,
     validate_dataset,
 )
 
@@ -160,9 +161,15 @@ class TestValidateDataset:
             validate_dataset(path)
 
 
+class _Results:
+    def __init__(self, save_dir):
+        self.save_dir = str(save_dir)
+
+
 class TestBestWeights:
     def test_reports_a_run_that_has_not_finished(self, tmp_path):
         config = TrainConfig(project=str(tmp_path / "runs"), name="plates")
+        (tmp_path / "runs").mkdir()
         with pytest.raises(TrainingError, match="has training finished"):
             best_weights(config)
 
@@ -172,6 +179,49 @@ class TestBestWeights:
         weights.mkdir(parents=True)
         (weights / "best.pt").write_bytes(b"weights")
         assert best_weights(config).name == "best.pt"
+
+    def test_finds_weights_when_ultralytics_nests_the_run_directory(self, tmp_path):
+        # Observed on Colab: a relative `project` resolved against Ultralytics'
+        # own runs_dir, so weights landed in runs/detect/runs/detect/plates
+        # while `project/name` was runs/detect/plates. Reconstructing the path
+        # found nothing; searching the tree finds it.
+        config = TrainConfig(project=str(tmp_path / "runs" / "detect"), name="plates")
+        nested = tmp_path / "runs" / "detect" / "runs" / "detect" / "plates" / "weights"
+        nested.mkdir(parents=True)
+        (nested / "best.pt").write_bytes(b"weights")
+        assert best_weights(config) == nested / "best.pt"
+
+    def test_prefers_the_directory_ultralytics_reports(self, tmp_path):
+        config = TrainConfig(project=str(tmp_path / "runs"), name="plates")
+        reported = tmp_path / "runs" / "elsewhere" / "weights"
+        reported.mkdir(parents=True)
+        (reported / "best.pt").write_bytes(b"weights")
+        results = _Results(reported.parent)
+        assert best_weights(config, results) == reported / "best.pt"
+
+    def test_picks_the_most_recent_run(self, tmp_path):
+        import os
+        import time
+
+        config = TrainConfig(project=str(tmp_path / "runs"), name="plates")
+        for name, age in (("plates", 100), ("plates2", 0)):
+            weights = tmp_path / "runs" / name / "weights"
+            weights.mkdir(parents=True)
+            path = weights / "best.pt"
+            path.write_bytes(b"w")
+            stamp = time.time() - age
+            os.utime(path, (stamp, stamp))
+        assert best_weights(config).parent.parent.name == "plates2"
+
+
+class TestRunDirectory:
+    def test_uses_the_reported_save_dir(self, tmp_path):
+        config = TrainConfig(project=str(tmp_path), name="plates")
+        assert run_directory(_Results("/somewhere/else"), config) == Path("/somewhere/else")
+
+    def test_falls_back_to_project_and_name(self, tmp_path):
+        config = TrainConfig(project=str(tmp_path), name="plates")
+        assert run_directory(object(), config) == tmp_path / "plates"
 
 
 @pytest.mark.gpu
