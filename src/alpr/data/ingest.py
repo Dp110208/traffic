@@ -13,7 +13,7 @@ otherwise spend detector capacity on a class Phase 6 never uses.
 from __future__ import annotations
 
 from collections.abc import Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from PIL import Image
@@ -203,4 +203,101 @@ def from_yolo_dir(
         skipped_no_label=no_label,
         skipped_bad_label=bad_label,
         dropped_boxes=dropped_total,
+    )
+
+
+# Roboflow's YOLO export writes one directory per split, each with its own
+# images/ and labels/. It spells validation "valid"; Ultralytics says "val".
+_ROBOFLOW_SPLIT_DIRS = ("train", "valid", "val", "test")
+
+
+def from_roboflow_export(
+    location: str | Path,
+    *,
+    source: str,
+    region: Region = Region.UNKNOWN,
+    keep_classes: frozenset[int] | None = None,
+    id_prefix: str | None = None,
+    path_root: str | Path | None = None,
+    strict: bool = False,
+) -> IngestReport:
+    """Ingest a Roboflow YOLO export, pooling all of its splits.
+
+    **Roboflow's own train/valid/test split is discarded on purpose.** Their
+    split is random per image, so frames from one scene can sit on both sides
+    of it, and it knows nothing about our region stratification. We pool every
+    image and re-split with `alpr.data.split`, which is grouped, stratified and
+    deterministic. Trusting the upstream split would quietly reintroduce the
+    leakage Phase 1 exists to prevent.
+
+    Args:
+        location: the export root — the directory holding `train/`, `valid/`,
+            `test/` and `data.yaml`.
+        source: provenance tag, also the licence audit trail.
+        region: region to tag every plate with.
+        keep_classes: source class ids meaning "plate"; None keeps all, which
+            is correct for these single-class datasets.
+        id_prefix: prefix for image ids, to keep sources from colliding.
+        path_root: root the stored paths are relative to. Defaults to
+            `location`'s parent so several exports compose under one root.
+        strict: raise on a malformed label rather than recording it.
+
+    Raises:
+        DatasetError: when the export contains none of the expected split
+            directories.
+    """
+    location = Path(location)
+    if not location.is_dir():
+        raise DatasetError(f"export directory does not exist: {location}")
+
+    root = Path(path_root) if path_root is not None else location.parent
+
+    records: list[ImageRecord] = []
+    no_label: list[str] = []
+    bad_label: list[tuple[str, str]] = []
+    dropped = 0
+    found_any = False
+
+    for split_dir in _ROBOFLOW_SPLIT_DIRS:
+        images_dir = location / split_dir / "images"
+        labels_dir = location / split_dir / "labels"
+        if not images_dir.is_dir() or not labels_dir.is_dir():
+            continue
+
+        found_any = True
+        # Namespace ids by the upstream split. Nothing guarantees a stem is
+        # unique across train/valid/test, and a collision would only surface
+        # later as a "duplicate image_id" abort from write_manifest — after
+        # the multi-gigabyte download. The upstream split is kept in `meta`
+        # for provenance; it is not used for splitting.
+        split_prefix = f"{id_prefix or ''}{split_dir}-"
+        report = from_yolo_dir(
+            images_dir,
+            labels_dir,
+            source=source,
+            region=region,
+            keep_classes=keep_classes,
+            id_prefix=split_prefix,
+            path_root=root,
+            strict=strict,
+        )
+        records.extend(
+            replace(record, meta={**record.meta, "roboflow_split": split_dir})
+            for record in report.records
+        )
+        no_label.extend(report.skipped_no_label)
+        bad_label.extend(report.skipped_bad_label)
+        dropped += report.dropped_boxes
+
+    if not found_any:
+        raise DatasetError(
+            f"no split directories found under {location}. Expected one of "
+            f"{list(_ROBOFLOW_SPLIT_DIRS)}, each with images/ and labels/."
+        )
+
+    return IngestReport(
+        records=records,
+        skipped_no_label=no_label,
+        skipped_bad_label=bad_label,
+        dropped_boxes=dropped,
     )

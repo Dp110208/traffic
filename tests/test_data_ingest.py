@@ -6,7 +6,12 @@ import pytest
 from PIL import Image
 
 from alpr.data import DatasetError, Region
-from alpr.data.ingest import from_yolo_dir, image_size, parse_yolo_label
+from alpr.data.ingest import (
+    from_roboflow_export,
+    from_yolo_dir,
+    image_size,
+    parse_yolo_label,
+)
 
 
 class TestParseYoloLabel:
@@ -184,3 +189,92 @@ class TestFromYoloDir:
         images.mkdir()
         with pytest.raises(DatasetError, match="labels_dir does not exist"):
             from_yolo_dir(images, source="t")
+
+
+def _make_roboflow_export(tmp_path, name="export", splits=("train", "valid", "test"), n=3):
+    """Mimic a Roboflow YOLO export: one directory per split."""
+    location = tmp_path / name
+    for split in splits:
+        images = location / split / "images"
+        labels = location / split / "labels"
+        images.mkdir(parents=True)
+        labels.mkdir(parents=True)
+        for i in range(n):
+            stem = f"{split}_img{i}"
+            Image.new("RGB", (640, 480)).save(images / f"{stem}.jpg")
+            (labels / f"{stem}.txt").write_text("0 0.5 0.5 0.2 0.1\n")
+    return location
+
+
+class TestFromRoboflowExport:
+    def test_pools_every_split(self, tmp_path):
+        # Roboflow's own split is discarded — we re-split ourselves, grouped
+        # and stratified, so all three directories become one pool.
+        location = _make_roboflow_export(tmp_path)
+        report = from_roboflow_export(location, source="rf")
+        assert len(report.records) == 9
+
+    def test_handles_val_as_well_as_valid(self, tmp_path):
+        location = _make_roboflow_export(tmp_path, splits=("train", "val"))
+        assert len(from_roboflow_export(location, source="rf").records) == 6
+
+    def test_tolerates_a_missing_split(self, tmp_path):
+        location = _make_roboflow_export(tmp_path, splits=("train",))
+        assert len(from_roboflow_export(location, source="rf").records) == 3
+
+    def test_paths_resolve_under_the_shared_root(self, tmp_path):
+        location = _make_roboflow_export(tmp_path)
+        report = from_roboflow_export(location, source="rf")
+        for record in report.records:
+            assert (tmp_path / record.file_name).exists(), record.file_name
+
+    def test_same_stem_in_two_splits_does_not_collide(self, tmp_path):
+        # Nothing guarantees stems are unique across train/valid/test. A
+        # collision would only surface as a "duplicate image_id" abort from
+        # write_manifest — after the whole dataset had been downloaded.
+        location = tmp_path / "export"
+        for split in ("train", "valid", "test"):
+            images = location / split / "images"
+            labels = location / split / "labels"
+            images.mkdir(parents=True)
+            labels.mkdir(parents=True)
+            Image.new("RGB", (100, 100)).save(images / "img_0001.jpg")
+            (labels / "img_0001.txt").write_text("0 0.5 0.5 0.2 0.1\n")
+
+        report = from_roboflow_export(location, source="rf")
+        assert len(report.records) == 3
+        assert len({r.image_id for r in report.records}) == 3
+
+    def test_records_keep_the_upstream_split_as_provenance(self, tmp_path):
+        location = _make_roboflow_export(tmp_path)
+        report = from_roboflow_export(location, source="rf")
+        assert {r.meta["roboflow_split"] for r in report.records} == {"train", "valid", "test"}
+
+    def test_two_exports_compose_without_collision(self, tmp_path):
+        a = _make_roboflow_export(tmp_path, name="eu")
+        b = _make_roboflow_export(tmp_path, name="in")
+        records = [
+            *from_roboflow_export(a, source="eu", id_prefix="eu-").records,
+            *from_roboflow_export(b, source="in", id_prefix="in-").records,
+        ]
+        assert len({r.image_id for r in records}) == 18
+        assert len({r.file_name for r in records}) == 18
+        for record in records:
+            assert (tmp_path / record.file_name).exists()
+
+    def test_applies_region_tag(self, tmp_path):
+        location = _make_roboflow_export(tmp_path, splits=("train",))
+        report = from_roboflow_export(location, source="rf", region=Region.EUROPE)
+        assert all(b.region is Region.EUROPE for r in report.records for b in r.boxes)
+
+    def test_missing_directory_raises(self, tmp_path):
+        with pytest.raises(DatasetError, match="does not exist"):
+            from_roboflow_export(tmp_path / "nope", source="rf")
+
+    def test_export_without_split_dirs_raises(self, tmp_path):
+        # A flat YOLO dump is a different shape; fail clearly instead of
+        # silently ingesting nothing.
+        empty = tmp_path / "flat"
+        (empty / "images").mkdir(parents=True)
+        with pytest.raises(DatasetError, match="no split directories"):
+            from_roboflow_export(empty, source="rf")

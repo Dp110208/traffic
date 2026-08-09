@@ -21,10 +21,19 @@ _EPS = 1e-6
 
 
 class Region(StrEnum):
-    """Plate-format region. Drives which validator runs in Phase 5."""
+    """Plate-format region.
+
+    `GERMANY` is the Phase 5 grammar target. `EUROPE` is deliberately separate
+    and is what the pan-European training data is tagged with: that set holds
+    French, Spanish, Italian and other EU plates, and labelling it `GERMANY`
+    would be a false claim about the data. Detection does not care — a plate
+    detector transfers across countries — and the DE-specific work is the
+    grammar in Phase 5, which needs no training data at all.
+    """
 
     INDIA = "IN"
     GERMANY = "DE"
+    EUROPE = "EU"
     UNKNOWN = "XX"
 
 

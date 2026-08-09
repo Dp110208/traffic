@@ -108,7 +108,10 @@ def test_source_breakdown_tracks_licence_provenance():
 
 
 class TestExitCriteria:
-    def _stats(self, n_plates, regions=(Region.INDIA, Region.GERMANY)):
+    # The default asks for IN + EU, not IN + DE: the openly-licensed European
+    # dataset is pan-European, and requiring a DE tag would fail on data that
+    # trains the detector perfectly well. German plates are Phase 5's grammar.
+    def _stats(self, n_plates, regions=(Region.INDIA, Region.EUROPE)):
         records = []
         for i in range(n_plates):
             region = regions[i % len(regions)]
@@ -128,6 +131,11 @@ class TestExitCriteria:
 
     def test_reports_a_missing_region(self):
         failures = check_exit_criteria(self._stats(1000, regions=(Region.INDIA,)))
+        assert any("region EU" in f for f in failures)
+
+    def test_required_regions_are_configurable(self):
+        # Phase 5 work, or a later German capture, can demand a DE tag.
+        failures = check_exit_criteria(self._stats(1000), required_regions=(Region.GERMANY,))
         assert any("region DE" in f for f in failures)
 
     def test_reports_every_failure_not_just_the_first(self):
