@@ -1,0 +1,67 @@
+[project]
+name = "alpr"
+version = "0.1.0"
+description = "End-to-end automatic license plate recognition with Excel logging (India + Germany)"
+readme = "README.md"
+# Base deps are pure-Python-version-agnostic and work on the local 3.13.
+# The `gpu` extra is the one with a narrower floor — PaddlePaddle wheel
+# coverage per Python version is pinned down on Colab in Phase 4, not guessed
+# here. Nothing in the base install depends on Paddle.
+requires-python = ">=3.11"
+dependencies = [
+    "ultralytics>=8.3",
+    "opencv-python-headless>=4.10",
+    "openpyxl>=3.1",
+    "numpy>=1.26",
+    "pandas>=2.2",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+# PaddlePaddle's GPU build is CUDA-only and has no macOS wheel, so this extra
+# is Colab-only by construction. Local checkouts stay light and skip OCR tests.
+gpu = [
+    "paddlepaddle-gpu>=2.6",
+    "paddleocr>=2.9",
+]
+# Local live-camera modes (Phase 9). Needs the GUI build of OpenCV, which
+# conflicts with the headless wheel above, so it is never installed alongside gpu.
+live = ["opencv-python>=4.10"]
+dev = [
+    "pytest>=8",
+    "ruff>=0.6",
+    "pre-commit>=3.8",
+    "nbstripout>=0.7",
+    "ipykernel>=6.29",
+]
+
+[project.scripts]
+alpr = "alpr.cli:main"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+# Notebooks are drivers, not library code: `import gc, torch` and `a(); b()` are
+# idiomatic in a cell and unhelpful to fight. nbstripout keeps their diffs clean.
+extend-exclude = ["notebooks", "*.md"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Tests needing a GPU, model weights, or a camera are opt-in: CI has none of
+# those, and a suite that nobody can run green is a suite nobody runs.
+addopts = "-q -m 'not gpu and not weights and not camera'"
+markers = [
+    "gpu: requires a CUDA GPU (Colab T4)",
+    "weights: requires trained model weights from the Hub",
+    "camera: requires a local webcam or reachable RTSP stream",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/alpr"]

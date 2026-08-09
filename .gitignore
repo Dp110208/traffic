@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+build/
+dist/
+
+# Tooling caches
+.pytest_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# Datasets and weights live on the HF Hub, never in git.
+data/**
+!data/.gitkeep
+!data/README.md
+*.pt
+*.onnx
+*.mlpackage/
+
+# Run outputs
+outputs/
+runs/
+*.xlsx
+!tests/fixtures/*.xlsx
+
+# Local media — clips are large and often contain personal data (GDPR).
+*.mp4
+*.mov
+*.avi
+!tests/fixtures/*.mp4
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
