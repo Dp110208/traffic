@@ -53,30 +53,37 @@ class TestCropPlate:
 
 
 class TestPrepare:
-    def test_upscales_small_crops(self):
-        # The single most valuable step: recognition models expect ~48px text,
-        # and plates arrive at half that.
+    def test_defaults_apply_nothing(self):
+        # Measured on 124 labelled crops: every step made CER worse, because
+        # PaddleOCR normalizes crops itself and doing it first resamples twice.
+        crop = Image.new("RGB", (100, 20), (90, 100, 110))
+        out = prepare(crop, Preprocess())
+        assert out.size == (100, 20)
+        assert out.mode == "RGB"
+
+    def test_upscales_when_asked(self):
         small = Image.new("RGB", (100, 20))
-        assert prepare(small, Preprocess()).height == TARGET_HEIGHT
+        settings = Preprocess(upscale=True)
+        assert prepare(small, settings).height == TARGET_HEIGHT
 
     def test_does_not_downscale_large_crops(self):
         large = Image.new("RGB", (400, 120))
-        assert prepare(large, Preprocess()).height == 120
+        assert prepare(large, Preprocess(upscale=True)).height == 120
 
     def test_upscale_preserves_aspect_ratio(self):
         crop = Image.new("RGB", (100, 20))
-        out = prepare(crop, Preprocess(grayscale=False, autocontrast=False))
+        out = prepare(crop, Preprocess(upscale=True))
         assert out.width == pytest.approx(100 * TARGET_HEIGHT / 20, rel=0.02)
 
-    def test_grayscale(self):
-        out = prepare(Image.new("RGB", (200, 60)), Preprocess(autocontrast=False))
+    def test_grayscale_when_asked(self):
+        out = prepare(Image.new("RGB", (200, 60)), Preprocess(grayscale=True))
         assert out.mode == "L"
 
     def test_autocontrast_stretches_the_range(self):
         # A washed-out plate should come back with usable contrast.
         flat = Image.new("L", (100, 60), 120)
         flat.putpixel((0, 0), 130)
-        out = prepare(flat, Preprocess(upscale=False, grayscale=False))
+        out = prepare(flat, Preprocess(autocontrast=True))
         assert out.getextrema() != (120, 130)
 
     def test_control_variant_changes_nothing(self):
@@ -87,8 +94,9 @@ class TestPrepare:
 
     def test_describe_names_the_active_steps(self):
         assert Preprocess.none().describe() == "raw"
-        described = Preprocess().describe()
-        assert "upscale" in described and "gray" in described
+        assert Preprocess().describe() == "pad"
+        described = Preprocess.all_on().describe()
+        assert "upscale" in described and "gray" in described and "sharpen" in described
 
 
 class TestFirstResult:
