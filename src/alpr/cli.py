@@ -92,6 +92,35 @@ def _cmd_label(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_fetch_data(args: argparse.Namespace) -> int:
+    from alpr.build import BuildError, ensure_dataset
+    from alpr.env import MissingCredential
+
+    try:
+        data_yaml = ensure_dataset(
+            raw_dir=args.raw_dir,
+            out_dir=args.out_dir,
+            manifest_path=args.manifest,
+            seed=args.seed,
+            force=args.force,
+        )
+    except MissingCredential as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    except BuildError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    from alpr.data import read_manifest, split_records
+    from alpr.data.stats import compute_stats
+
+    records = read_manifest(args.manifest)
+    stats = compute_stats(records, split_records(records, seed=args.seed))
+    print(stats.report())
+    print(f"\ndata.yaml: {data_yaml}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="alpr", description=__doc__)
     parser.add_argument("--version", action="version", version=f"alpr {__version__}")
@@ -154,6 +183,21 @@ def build_parser() -> argparse.ArgumentParser:
     label_cmd.add_argument("--limit", type=int, default=200)
     label_cmd.add_argument("--seed", type=int, default=0)
     label_cmd.set_defaults(func=_cmd_label)
+
+    fetch_cmd = sub.add_parser(
+        "fetch-data", help="download the source datasets and build the split"
+    )
+    fetch_cmd.add_argument(
+        "--raw-dir",
+        default="data/raw",
+        dest="raw_dir",
+        help="where the downloaded frames go (an external disk is fine)",
+    )
+    fetch_cmd.add_argument("--out-dir", default="data/yolo", dest="out_dir")
+    fetch_cmd.add_argument("--manifest", default="data/manifest.jsonl")
+    fetch_cmd.add_argument("--seed", type=int, default=0)
+    fetch_cmd.add_argument("--force", action="store_true", help="rebuild even if the export exists")
+    fetch_cmd.set_defaults(func=_cmd_fetch_data)
 
     return parser
 

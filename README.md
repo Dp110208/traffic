@@ -126,6 +126,52 @@ An earlier ablation on *synthetic* renders showed no effect either way and was r
 Only real crops showed the harm — which is the argument for labelling real data rather than
 trusting a clean proxy.
 
+### End to end: where the losses actually happen
+
+Running the whole pipeline — detect → crop → read → validate — over the same 124 labelled plates,
+with every plate attributed to the stage that lost it:
+
+| | count | share |
+|---|---|---|
+| correct | 53 | 42.7% |
+| **detection miss** | **0** | **0%** |
+| grammar rejected | 50 | 40.3% |
+| OCR error | 18 | 14.5% |
+| grammar corrupted a correct read | 3 | 2.4% |
+
+End-to-end accuracy **42.7%**, precision **71.6%** of the 74 plates it chose to log.
+
+**Detection lost nothing.** Not one of the 124 plates was missed — consistent with the detector's
+0.998 recall. Every remaining failure is a reading failure, so more detector training would buy
+exactly zero.
+
+Split by region, the pattern from the OCR section repeats and sharpens:
+
+| | correct | rejected | OCR error | corrupted |
+|---|---|---|---|---|
+| **Indian** (65) | **67.7%** | 13.8% | 18.5% | 0% |
+| **European** (59) | 15.3% | 69.5% | 10.2% | 5.1% |
+
+Two thirds of European plates are **refused rather than misread**. The grammars model India and
+Germany; that dataset is full of Polish and Norwegian plates, and the pipeline correctly declines
+to log a string it cannot validate. That is the design working — precision stays at 71.6%
+*because* it refuses — but it caps recall hard on unmodelled formats.
+
+The 3 corrupted reads are all Polish plates forced toward German structure
+(`P74103` → `PT4103`, `WA11003` → `WAI1003`, `ERBUG19` → `ERBU619`). A grammar applied outside
+its region does damage, not just nothing.
+
+### Two bugs this found
+
+**Indian plates may have one to four trailing digits, not exactly four.** The grammar demanded
+four and silently rejected `KL54H369`, `TN58AM1` and `KL7BZ99` — all real. Unit tests missed it
+because they were written from the same assumption as the code. Loosening it recovered 3 plates
+(40.3% → 42.7% end to end, Indian 63.1% → 67.7%) at the cost of ~2 points of precision, and of
+some correction power: `MH12ABB234` is now a legitimate reading, so the grammar no longer repairs
+that `B` as an `8`. Both halves of that trade are in the test suite.
+
+**Preprocessing was hurting**, as the ablation above shows. Removed.
+
 ---
 
 ## Pipeline
@@ -224,7 +270,7 @@ CI test both refuse credential-shaped strings in the repo.
 | 5 | Plate grammars (India, Germany) | ✅ |
 | 6 | Tracking + multi-frame voting | ✅ |
 | 7 | Excel logging + deduplication | ✅ |
-| 8 | End-to-end evaluation | blocked on labels |
+| 8 | End-to-end evaluation | ✅ |
 | 9 | Live webcam / RTSP (Apple Silicon, MPS) | ✅ |
 
 See [ROADMAP.md](ROADMAP.md) for the full plan and each phase's exit criteria.

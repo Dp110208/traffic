@@ -3,9 +3,15 @@
 Two series are in use:
 
 **Standard** — `MH 12 AB 1234`: a two-letter state code, a one-or-two digit
-RTO district code, an optional one-to-three letter series, and a four-digit
-number. The series letters are genuinely optional; early registrations in a
-district have none.
+RTO district code, an optional one-to-three letter series, and a number of
+**one to four** digits. Both the optional series and the short numbers are
+real: early registrations in a district have no series letters, and plates
+like `KL 54 H 369` and `TN 58 AM 1` are ordinary.
+
+The number was originally written as exactly four digits. End-to-end
+measurement against hand-labelled plates found that wrong — it rejected
+`KL54H369`, `TN58AM1` and `KL7BZ99`, all genuine. Unit tests had not caught
+it because they were written from the same wrong assumption as the code.
 
 **BH (Bharat)** — `21 BH 1234 AB`: introduced for vehicles that move between
 states. Two year digits, the literal `BH`, four digits, then one or two
@@ -68,7 +74,7 @@ STATE_CODES: dict[str, str] = {
 }
 
 _STANDARD = re.compile(
-    r"^(?P<state>[A-Z]{2})(?P<district>\d{1,2})(?P<series>[A-Z]{0,3})(?P<number>\d{4})$"
+    r"^(?P<state>[A-Z]{2})(?P<district>\d{1,2})(?P<series>[A-Z]{0,3})(?P<number>\d{1,4})$"
 )
 _BH = re.compile(r"^(?P<year>\d{2})BH(?P<number>\d{4})(?P<series>[A-Z]{1,2})$")
 
@@ -111,9 +117,9 @@ class IndiaFormat(PlateFormat):
         )
 
     def accepts_length(self, length: int) -> bool:
-        # Shortest standard plate is AA1234 (state + 1 district digit is not
-        # valid on its own, so 2+1+0+4 = 7); BH plates are 9 or 10.
-        return 7 <= length <= 11
+        # Shortest is state + 1 district digit + 1 number digit = 4; BH plates
+        # run to 10.
+        return 4 <= length <= 11
 
     def format_display(self, match: PlateMatch) -> str:
         c = match.components
