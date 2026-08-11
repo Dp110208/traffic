@@ -19,6 +19,15 @@ data/**
 *.onnx
 *.mlpackage/
 
+# Hand-labelled plate crops and their transcriptions. Deliberately NOT
+# committed: a plate number is personal data, and while the source images are
+# CC BY, publishing 200 crops beside a list of the real plate numbers creates a
+# searchable register that the originals are not. The aggregate results are in
+# the README; anyone reproducing them can relabel with `alpr label`.
+labels/
+labels.json
+labels.zip
+
 # Run outputs
 outputs/
 runs/

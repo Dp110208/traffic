@@ -73,6 +73,61 @@ found. The single miss sits in the 32–64 px band.
 
 ---
 
+## Reading plates: measured, not asserted
+
+Neither source dataset ships plate *text*, so 124 test-split crops were hand-labelled
+(`alpr label`, sampled across size buckets so the number is not flattered by easy plates).
+
+### The grammars work — where they apply
+
+| | CER | exact match |
+|---|---|---|
+| Raw OCR | 0.2291 | 30.6% |
+| **+ plate grammar** | **0.1693** | **43.5%** |
+
+Grammar-constrained correction cuts CER by **26%** and lifts exact-match accuracy by **13
+points**. The grammar recognised 69 of 124 reads and altered 35 of them.
+
+Splitting by region shows *why*, and it is the more honest number:
+
+| | CER raw | CER + grammar | exact raw | exact + grammar |
+|---|---|---|---|---|
+| **Indian plates** (65) | 0.2067 | **0.1138** | 36.9% | **61.5%** |
+| **European plates** (59) | 0.2658 | 0.2605 | 23.7% | 23.7% |
+
+**Indian accuracy rises from 37% to 62%. European accuracy does not move at all.**
+
+That is not a defect in the method — it is the method working exactly as designed and being
+limited by scope. The grammars model India and Germany. The European dataset is *pan*-European:
+Polish, Norwegian and other plates whose formats nothing here describes. A grammar cannot correct
+toward a rule it does not have.
+
+The lesson generalises: grammar-constrained correction is worth roughly **+25 points of accuracy
+on plates whose format you have modelled, and nothing at all on plates you have not**.
+
+### Preprocessing was removed, because it made things worse
+
+The obvious idea — upscale small crops, normalize contrast — was measured against a control:
+
+| variant | CER | exact match |
+|---|---|---|
+| **raw (control)** | **0.2291** | 30.6% |
+| upscale only | 0.2301 | 29.8% |
+| gray + contrast | 0.2380 | 30.6% |
+| upscale + gray + contrast | 0.2410 | 30.6% |
+| + sharpen | 0.2500 | 27.4% |
+
+Every step made it worse, and the original default was the second-worst setting available.
+PaddleOCR already resizes and normalizes each crop to its own input specification, so
+preprocessing first resamples twice and destroys detail the model would have used.
+`Preprocess()` now applies nothing by default.
+
+An earlier ablation on *synthetic* renders showed no effect either way and was reported as such.
+Only real crops showed the harm — which is the argument for labelling real data rather than
+trusting a clean proxy.
+
+---
+
 ## Pipeline
 
 ```
@@ -174,9 +229,9 @@ CI test both refuse credential-shaped strings in the repo.
 
 See [ROADMAP.md](ROADMAP.md) for the full plan and each phase's exit criteria.
 
-**Phase 4 note:** neither source dataset ships ground-truth plate *text*, only boxes. Character
-error rate therefore cannot be measured without hand-labelling a test subset — `alpr.cer` is
-ready for it.
+**Phase 4 note:** neither source dataset ships plate *text*, so 124 test crops were
+hand-labelled with `alpr label` to make CER measurable. See
+[Reading plates](#reading-plates-measured-not-asserted).
 
 ### Live performance
 

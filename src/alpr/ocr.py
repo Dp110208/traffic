@@ -4,27 +4,34 @@ Detection localizes; this reads. The two are kept apart deliberately — the
 detector is region-agnostic, while everything about *reading* a plate is
 country-specific, and that lives in `alpr.plates`.
 
-**Preprocessing turned out not to matter, and that is a measured result.**
+**Preprocessing is off by default, because measurement said it hurts.**
 
 The expectation was the opposite: a plate crop is small and low-contrast, often
 40 px tall against a recognition model trained on ~48 px text, so upscaling and
-contrast normalization looked like free accuracy. Running the ablation in
-`alpr.cer` over plates rendered at the dataset's median 119x40 px produced
-*identical* CER for every variant — raw, upscaled, greyscaled, contrast-
-stretched, sharpened. All 0.1343.
+contrast normalization looked like free accuracy. That belief survived one
+weak test and died on a real one.
 
-PaddleOCR resizes and normalizes each crop to its own input specification
-before inference, so this module's work is redundant with the library's. The
-steps are kept, switchable and defaulting on, because they cost microseconds
-and would matter for a reader that does *not* normalize internally — but no
-claim is made that they help here, because they measurably do not.
+On synthetic renders every variant scored identically — no effect. On **124
+hand-labelled real crops** the picture was worse than neutral:
 
-That measurement is on clean synthetic renders. Real crops carry motion blur,
-oblique angles and poor light, where the answer may differ; the ablation exists
-to be re-run on labelled real crops rather than assumed either way.
+    raw (control)              CER 0.2291   <- best
+    upscale only                   0.2301
+    gray + contrast                0.2380
+    upscale + gray + contrast      0.2410   <- the old default
+    + sharpen                      0.2500
 
-The general point stands regardless of which way it came out: a step that
-cannot be shown to help is a step that should not be trusted.
+PaddleOCR already resizes and normalizes each crop to its own input
+specification. Doing it first means resampling twice, and the second pass
+destroys detail the model would otherwise have used. The old default was the
+second-worst configuration available.
+
+So `Preprocess()` now applies nothing, and every step must be asked for
+explicitly. They are kept because a reader that does *not* normalize
+internally would need them — but nothing here turns them on for you.
+
+The general lesson is the point of the ablation: a step that cannot be shown
+to help should not be trusted, and one that was never measured is not a
+design decision but a guess.
 
 **One thing this cannot do:** perspective correction. Undoing the slant of a
 plate photographed off-axis needs its four corners, and the detector produces
@@ -72,28 +79,31 @@ class OcrResult:
 class Preprocess:
     """Which preprocessing steps to apply, and how hard.
 
-    Defaults are on, but see the module docstring: measured against PaddleOCR
-    they changed nothing, because it normalizes crops itself. Treat these as
-    insurance for a different reader, not as a source of accuracy here.
+    **Everything defaults to off.** Measured on 124 labelled crops, each step
+    made CER worse — PaddleOCR normalizes crops itself, so preprocessing first
+    resamples twice and loses detail. See the module docstring for the table.
+
+    Padding is the exception and stays on: it is a crop decision, not an image
+    transform, and a plate cut exactly to its box loses the quiet space around
+    the characters.
     """
 
     padding: float = DEFAULT_PADDING
-    upscale: bool = True
+    upscale: bool = False
     target_height: int = TARGET_HEIGHT
-    grayscale: bool = True
-    autocontrast: bool = True
+    grayscale: bool = False
+    autocontrast: bool = False
     sharpen: bool = False
 
     @classmethod
     def none(cls) -> Preprocess:
-        """The control condition: crop only, nothing applied."""
-        return cls(
-            padding=0.0,
-            upscale=False,
-            grayscale=False,
-            autocontrast=False,
-            sharpen=False,
-        )
+        """The strict control: not even padding."""
+        return cls(padding=0.0)
+
+    @classmethod
+    def all_on(cls) -> Preprocess:
+        """Every step enabled. Kept for the ablation, not recommended."""
+        return cls(upscale=True, grayscale=True, autocontrast=True, sharpen=True)
 
     def describe(self) -> str:
         on = [
