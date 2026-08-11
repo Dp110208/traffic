@@ -25,6 +25,10 @@ OCR — that error is unrecoverable. A false positive produces a crop, OCR emits
 plate grammar rejects it. The error profile is the right way round: **1 missed plate against 23
 false positives** across the whole test split.
 
+![Training curves](results/results.png)
+
+Full run artifacts, including the exact Ultralytics arguments, are in [`results/`](results/).
+
 ### The test set was audited for leakage
 
 A perceptual-hash audit (`alpr.dupes`) found **5.8% of test images had a near-duplicate in
