@@ -155,17 +155,39 @@ CI test both refuse credential-shaped strings in the repo.
 | 1 | Dataset — ingest, grouped split, export | ✅ |
 | 2 | Detector training | ✅ |
 | 3 | Detection evaluation + failure gallery | ✅ |
-| 4 | OCR (PaddleOCR) | — |
+| 4 | OCR (PaddleOCR) + CER ablation | ✅ |
 | 5 | Plate grammars (India, Germany) | ✅ |
-| 6 | Tracking + multi-frame voting | — |
+| 6 | Tracking + multi-frame voting | ✅ |
 | 7 | Excel logging + deduplication | ✅ |
 | 8 | End-to-end evaluation | — |
-| 9 | Live webcam / RTSP (Apple Silicon, MPS) | — |
+| 9 | Live webcam / RTSP (Apple Silicon, MPS) | ✅ |
 
 See [ROADMAP.md](ROADMAP.md) for the full plan and each phase's exit criteria.
 
 **Phase 4 note:** neither source dataset ships ground-truth plate *text*, only boxes. Character
-error rate therefore cannot be measured without hand-labelling a test subset.
+error rate therefore cannot be measured without hand-labelling a test subset — `alpr.cer` is
+ready for it.
+
+### Live performance
+
+Measured end to end on an M4 MacBook Air, detection on Metal/MPS and recognition on CPU:
+
+| | |
+|---|---|
+| Detection | 34.6 fps (29 ms/frame) |
+| OCR per plate crop | 41.1 ms |
+| Full pipeline, `ocr_every=1` | 14.3 fps |
+| Full pipeline, `ocr_every=3` | **23.5 fps** |
+
+Recognition costs more than detection, which is why OCR does not run on every frame. A track
+does not need forty reads — voting is decisive with a handful — so reading each track once every
+three frames keeps the vote strong and the loop real-time.
+
+```bash
+alpr run --source 0 --weights best.pt --out plates.xlsx     # webcam
+alpr run --source rtsp://camera.local/stream --region DE    # network camera
+alpr run --source clip.mp4 --ocr-every 1                    # offline, most accurate
+```
 
 ---
 
