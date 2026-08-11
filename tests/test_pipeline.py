@@ -1,0 +1,176 @@
+"""End-to-end orchestration.
+
+The detector and reader are stubbed: this tests that the phases compose —
+detection feeds tracking, tracking feeds OCR, votes feed the grammar, and only
+survivors reach the log — not that YOLO or PaddleOCR work.
+"""
+
+from __future__ import annotations
+
+import numpy as np
+import pytest
+
+from alpr.data.schema import Region
+from alpr.detect import Detection
+from alpr.excel import read_workbook
+from alpr.ocr import OcrResult
+from alpr.pipeline import Pipeline, PipelineConfig, PipelineStats
+from alpr.sources import Frame, FrameSource
+
+
+class FakeSource(FrameSource):
+    """Replays a scripted sequence of frames."""
+
+    name = "fake.mp4"
+
+    def __init__(self, count: int) -> None:
+        self.count = count
+
+    def frames(self):
+        for i in range(self.count):
+            yield Frame(
+                index=i,
+                image=np.zeros((240, 320, 3), dtype=np.uint8),
+                timestamp=1_800_000_000.0 + i,
+            )
+
+    def close(self) -> None:
+        pass
+
+
+class FakeDetector:
+    """One plate, drifting, for the first `visible_for` frames."""
+
+    def __init__(self, visible_for: int = 8) -> None:
+        self.visible_for = visible_for
+        self.calls = 0
+
+    def detect(self, image, **kwargs):
+        index = self.calls
+        self.calls += 1
+        if index >= self.visible_for:
+            return []
+        x = 0.20 + index * 0.005
+        return [Detection(x, 0.55, x + 0.12, 0.60, 0.92)]
+
+
+class FakeReader:
+    """Returns scripted OCR text, cycling through the list."""
+
+    def __init__(self, texts) -> None:
+        self.texts = list(texts)
+        self.calls = 0
+
+    def read(self, image, detection):
+        text = self.texts[self.calls % len(self.texts)]
+        self.calls += 1
+        return OcrResult(text, 0.9)
+
+
+def run(tmp_path, texts, *, frames=20, **config_kwargs) -> tuple[PipelineStats, list]:
+    detector = FakeDetector()
+    reader = FakeReader(texts)
+    config = PipelineConfig(min_hits=2, max_age=3, **config_kwargs)
+    pipeline = Pipeline(detector, reader, config)
+    out = tmp_path / "log.xlsx"
+    stats = pipeline.run(FakeSource(frames), out)
+    rows = read_workbook(out) if out.exists() else []
+    return stats, rows
+
+
+class TestPipeline:
+    def test_one_vehicle_becomes_one_row(self, tmp_path):
+        stats, rows = run(tmp_path, ["MH12AB1234"], ocr_every=1)
+        assert stats.logged == 1
+        assert len(rows) == 1
+        assert rows[0]["Plate"] == "MH12AB1234"
+
+    def test_noisy_reads_are_voted_into_the_right_plate(self, tmp_path):
+        # No single read is repeated enough to win a string vote.
+        stats, rows = run(
+            tmp_path,
+            ["MH12A81234", "MH12AB1Z34", "NH12AB1234", "MH12AB1234"],
+            ocr_every=1,
+        )
+        assert rows[0]["Plate"] == "MH12AB1234"
+        assert stats.logged == 1
+
+    def test_ocr_every_reduces_calls(self, tmp_path):
+        # The live-framerate lever: fewer reads, same answer.
+        dense, _ = run(tmp_path / "a", ["MH12AB1234"], ocr_every=1)
+        sparse, rows = run(tmp_path / "b", ["MH12AB1234"], ocr_every=3)
+        (tmp_path / "a").mkdir(exist_ok=True)
+        assert sparse.ocr_calls < dense.ocr_calls
+        assert rows[0]["Plate"] == "MH12AB1234"
+
+    def test_unparseable_plates_are_rejected_not_logged(self, tmp_path):
+        # A false positive that survived tracking is what the grammar catches.
+        stats, rows = run(tmp_path, ["ZZZZZZ"], ocr_every=1)
+        assert stats.rejected >= 1
+        assert stats.logged == 0
+        assert rows == []
+
+    def test_region_restricts_the_grammar(self, tmp_path):
+        stats, _ = run(tmp_path, ["MH12AB1234"], ocr_every=1, region=Region.GERMANY)
+        assert stats.logged == 0
+        assert stats.rejected >= 1
+
+    def test_confidence_takes_the_weaker_evidence(self, tmp_path):
+        # Vote confidence and grammar confidence are different evidence.
+        _, rows = run(tmp_path, ["MH12AB1234"], ocr_every=1)
+        assert rows[0]["Confidence"] <= 1.0
+
+    def test_stats_are_reported(self, tmp_path):
+        stats, _ = run(tmp_path, ["MH12AB1234"], ocr_every=1)
+        assert stats.frames == 20
+        assert stats.detections == 8
+        assert stats.tracks_completed == 1
+        assert "throughput" in stats.report()
+
+    def test_max_frames_stops_early(self, tmp_path):
+        detector, reader = FakeDetector(), FakeReader(["MH12AB1234"])
+        pipeline = Pipeline(detector, reader, PipelineConfig(min_hits=2))
+        stats = pipeline.run(FakeSource(50), tmp_path / "log.xlsx", max_frames=5)
+        assert stats.frames == 5
+
+    def test_on_frame_callback_receives_each_frame(self, tmp_path):
+        seen = []
+        detector, reader = FakeDetector(), FakeReader(["MH12AB1234"])
+        pipeline = Pipeline(detector, reader, PipelineConfig(min_hits=2))
+        pipeline.run(
+            FakeSource(6),
+            tmp_path / "log.xlsx",
+            on_frame=lambda f, d, t: seen.append(f.index),
+        )
+        assert seen == [0, 1, 2, 3, 4, 5]
+
+    def test_a_track_still_live_at_the_end_is_logged(self, tmp_path):
+        # Without finish(), a vehicle in frame on the last frame is lost.
+        detector = FakeDetector(visible_for=100)
+        pipeline = Pipeline(
+            detector, FakeReader(["MH12AB1234"]), PipelineConfig(min_hits=2, ocr_every=1)
+        )
+        out = tmp_path / "log.xlsx"
+        stats = pipeline.run(FakeSource(6), out)
+        assert stats.logged == 1
+
+    def test_a_short_pass_with_sparse_ocr_is_counted_not_dropped(self, tmp_path):
+        # A vehicle can end its track before accumulating enough reads to
+        # vote. That is a real miss, and a vehicle vanishing with nothing
+        # recording it is the worst failure this pipeline has.
+        detector = FakeDetector(visible_for=100)
+        pipeline = Pipeline(
+            detector,
+            FakeReader(["MH12AB1234"]),
+            PipelineConfig(min_hits=2, ocr_every=3, min_reads=2),
+        )
+        stats = pipeline.run(FakeSource(6), tmp_path / "log.xlsx")
+        assert stats.logged == 0
+        assert stats.too_few_reads == 1
+        assert "too few reads" in stats.report()
+
+
+class TestConfig:
+    def test_rejects_zero_ocr_interval(self):
+        with pytest.raises(ValueError, match="ocr_every"):
+            PipelineConfig(ocr_every=0)

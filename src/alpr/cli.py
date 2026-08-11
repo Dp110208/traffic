@@ -41,6 +41,31 @@ def _cmd_train(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_run(args: argparse.Namespace) -> int:
+    from alpr.data.schema import Region
+    from alpr.detect import PlateDetector
+    from alpr.ocr import PlateReader
+    from alpr.pipeline import Pipeline, PipelineConfig
+    from alpr.sources import SourceError, open_source
+
+    try:
+        detector = PlateDetector(args.weights, device=args.device)
+        config = PipelineConfig(
+            ocr_every=args.ocr_every,
+            region=Region(args.region) if args.region else None,
+            confidence=args.confidence,
+        )
+        pipeline = Pipeline(detector, PlateReader(), config)
+        with open_source(args.source) as source:
+            stats = pipeline.run(source, args.out, max_frames=args.max_frames)
+    except (SourceError, FileNotFoundError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    print(stats.report())
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="alpr", description=__doc__)
     parser.add_argument("--version", action="version", version=f"alpr {__version__}")
@@ -59,6 +84,34 @@ def build_parser() -> argparse.ArgumentParser:
         help="do not require a CUDA GPU (a CPU run will not finish; for smoke tests only)",
     )
     train_cmd.set_defaults(func=_cmd_train)
+
+    run_cmd = sub.add_parser("run", help="detect, read and log plates from a source")
+    run_cmd.add_argument(
+        "--source",
+        required=True,
+        help="video path, camera index (0), or rtsp:// url",
+    )
+    run_cmd.add_argument("--out", default="plates.xlsx", help="Excel log to write")
+    run_cmd.add_argument("--weights", default="best.pt", help="trained detector weights")
+    run_cmd.add_argument(
+        "--device", default=None, help="cuda index, 'mps' or 'cpu' (auto-detected)"
+    )
+    run_cmd.add_argument(
+        "--region",
+        choices=["IN", "DE"],
+        default=None,
+        help="restrict plate parsing to one country's grammar",
+    )
+    run_cmd.add_argument(
+        "--ocr-every",
+        type=int,
+        default=3,
+        dest="ocr_every",
+        help="read each track once every N frames (1 is most accurate, slowest)",
+    )
+    run_cmd.add_argument("--confidence", type=float, default=0.25)
+    run_cmd.add_argument("--max-frames", type=int, default=None, dest="max_frames")
+    run_cmd.set_defaults(func=_cmd_run)
 
     return parser
 
