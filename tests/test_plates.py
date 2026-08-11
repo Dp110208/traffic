@@ -85,7 +85,6 @@ class TestIndiaFormat:
     @pytest.mark.parametrize(
         "plate",
         [
-            "MH12AB123",  # only three trailing digits
             "M12AB1234",  # one-letter state code
             "MH12AB12345",  # five trailing digits
             "MHXXAB1234",  # district must be digits
@@ -194,11 +193,28 @@ class TestAlternatives:
 
 class TestCorrection:
     def test_repairs_a_letter_where_a_digit_belongs(self):
-        # India requires digits at the end; the B is an 8.
+        # A letter cannot sit where the district digits belong, so the I
+        # after the state code is a 1.
+        match = correct_to_format("MHI2AB1234", INDIA)
+        assert match is not None
+        assert match.text == "MH12AB1234"
+        assert match.edits == 1
+
+    def test_short_numbers_are_real_plates_not_errors(self):
+        # Measured on hand-labelled data: KL54H369, TN58AM1 and KL7BZ99 are
+        # ordinary plates. Demanding four trailing digits rejected all three.
+        for plate in ("KL54H369", "TN58AM1", "KL7BZ99"):
+            assert INDIA.match(plate) is not None, plate
+
+    def test_looser_numbers_cost_some_correction_power(self):
+        # The tradeoff, recorded rather than hidden: MH12ABB234 is now a valid
+        # reading (series ABB, number 234), so the grammar no longer repairs
+        # the B as an 8. End-to-end this was still net positive — +3 plates
+        # recovered against ~2 points of precision — but it is a real loss.
         match = correct_to_format("MH12ABB234", INDIA)
         assert match is not None
-        assert match.text == "MH12AB8234"
-        assert match.edits == 1
+        assert match.edits == 0
+        assert match.components["series"] == "ABB"
 
     def test_repairs_a_digit_where_a_letter_belongs(self):
         # The state code must be letters, so 0 is O and 5 is S.
@@ -268,7 +284,7 @@ class TestCorrection:
 
     def test_confidence_falls_with_each_edit(self):
         clean = correct_to_format("MH12AB1234", INDIA)
-        repaired = correct_to_format("MH12ABB234", INDIA)
+        repaired = correct_to_format("MHI2AB1234", INDIA)
         assert repaired.confidence < clean.confidence
 
     def test_gives_up_beyond_max_edits(self):
@@ -281,8 +297,8 @@ class TestCorrection:
         assert correct_to_format("", INDIA) is None
 
     def test_records_the_original_reading(self):
-        match = correct_to_format("MH12ABB234", INDIA)
-        assert match.original == "MH12ABB234"
+        match = correct_to_format("MHI2AB1234", INDIA)
+        assert match.original == "MHI2AB1234"
         assert match.corrected is True
 
 
