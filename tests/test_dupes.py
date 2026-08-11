@@ -6,7 +6,16 @@ from PIL import Image, ImageEnhance
 
 from alpr.data.schema import ImageRecord, Split
 from alpr.data.split import SplitAssignment
-from alpr.dupes import DuplicatePair, dhash, find_duplicates, hamming
+from alpr.dupes import (
+    DuplicatePair,
+    DuplicateReport,
+    clean_subset,
+    dhash,
+    duplicate_clusters,
+    find_duplicates,
+    hamming,
+    regroup_by_duplicates,
+)
 
 
 def photo(path, seed=0, size=(200, 150)):
@@ -162,3 +171,91 @@ class TestDuplicatePair:
         pair = DuplicatePair("a", "b", 0, Split.VAL, Split.TEST)
         assert pair.crosses_splits is True
         assert pair.contaminates_evaluation is False
+
+
+class TestGroupKeyFromFilename:
+    """The regex fix, in isolation from hashing."""
+
+    def test_roboflow_video_frames_share_a_group(self):
+        # The exact pair that leaked: frames 1062 and 1063 of one clip landed
+        # in train and test because this pattern did not match.
+        a = ImageRecord("dayride_type1_001-mp4-t-1062", 10, 10)
+        b = ImageRecord("dayride_type1_001-mp4-t-1063", 10, 10)
+        assert a.group_key == b.group_key == "dayride_type1_001"
+
+    def test_classic_frame_naming_still_groups(self):
+        assert ImageRecord("clip_042_frame_0137", 10, 10).group_key == "clip_042"
+
+    def test_unrelated_stills_are_not_collapsed(self):
+        # A bare trailing-number rule would put most of the dataset in one
+        # group and hand it to a single split.
+        a = ImageRecord("pl_license_plate_205", 10, 10)
+        b = ImageRecord("pl_license_plate_242", 10, 10)
+        assert a.group_key != b.group_key
+
+
+class TestDuplicateClusters:
+    def test_pairs_become_clusters(self, tmp_path):
+        records, assignment, images = _setup(
+            tmp_path, {"a": (5, Split.TRAIN), "b": (5, Split.TEST)}
+        )
+        clusters = duplicate_clusters(find_duplicates(records, assignment, images))
+        assert clusters["a"] == clusters["b"]
+
+    def test_chains_merge_transitively(self):
+        # A~B and B~C must give one cluster even if A and C never paired:
+        # splitting a chain leaks exactly as badly as splitting a pair.
+        report = DuplicateReport(
+            images_hashed=3,
+            pairs=[
+                DuplicatePair("a", "b", 1, Split.TRAIN, Split.TRAIN),
+                DuplicatePair("b", "c", 1, Split.TRAIN, Split.TEST),
+            ],
+        )
+        clusters = duplicate_clusters(report)
+        assert clusters["a"] == clusters["b"] == clusters["c"]
+
+    def test_unduplicated_images_are_absent(self):
+        assert duplicate_clusters(DuplicateReport(images_hashed=1)) == {}
+
+
+class TestRegroup:
+    def test_duplicates_end_up_in_one_split(self, tmp_path):
+        from alpr.data.split import split_records, verify_split
+
+        records, assignment, images = _setup(
+            tmp_path,
+            {
+                "twin_a": (5, Split.TRAIN),
+                "twin_b": (5, Split.TEST),
+                **{f"solo{i}": (100 + i, Split.TRAIN) for i in range(12)},
+            },
+        )
+        report = find_duplicates(records, assignment, images)
+        regrouped = regroup_by_duplicates(records, report)
+
+        new_assignment = split_records(regrouped, seed=0)
+        verify_split(regrouped, new_assignment, require_all_splits=False)
+
+        by_id = {r.image_id: r for r in regrouped}
+        assert new_assignment.of(by_id["twin_a"]) is new_assignment.of(by_id["twin_b"])
+
+    def test_records_without_duplicates_are_untouched(self, tmp_path):
+        records, assignment, images = _setup(
+            tmp_path, {"a": (1, Split.TRAIN), "b": (2, Split.TEST)}
+        )
+        report = find_duplicates(records, assignment, images)
+        assert regroup_by_duplicates(records, report) == list(records)
+
+
+class TestCleanSubset:
+    def test_drops_only_contaminated_images(self, tmp_path):
+        records, assignment, images = _setup(
+            tmp_path,
+            {"tr": (5, Split.TRAIN), "te_dirty": (5, Split.TEST), "te_clean": (7, Split.TEST)},
+        )
+        report = find_duplicates(records, assignment, images)
+        test_records = [r for r in records if assignment.of(r) is Split.TEST]
+
+        clean = clean_subset(test_records, report, Split.TEST)
+        assert [r.image_id for r in clean] == ["te_clean"]
