@@ -4,6 +4,7 @@ Detects license plates in video, reads them, validates them against Indian and G
 grammars, and logs **one deduplicated row per vehicle** to an Excel workbook.
 
 [![CI](https://github.com/fayazhussain2821/ALPR/actions/workflows/ci.yml/badge.svg)](https://github.com/fayazhussain2821/ALPR/actions/workflows/ci.yml)
+[![Model on HF](https://img.shields.io/badge/%F0%9F%A4%97%20model-alpr--plate--detector-yellow)](https://huggingface.co/Babblu2821/alpr-plate-detector)
 
 ---
 
@@ -24,6 +25,15 @@ split of 465 images the model never saw.
 OCR — that error is unrecoverable. A false positive produces a crop, OCR emits noise, and the
 plate grammar rejects it. The error profile is the right way round: **1 missed plate against 23
 false positives** across the whole test split.
+
+The trained detector is published at **[Babblu2821/alpr-plate-detector](https://huggingface.co/Babblu2821/alpr-plate-detector)**:
+
+```python
+from huggingface_hub import hf_hub_download
+from ultralytics import YOLO
+
+model = YOLO(hf_hub_download("Babblu2821/alpr-plate-detector", "best.pt"))
+```
 
 ![Training curves](results/results.png)
 
@@ -67,7 +77,7 @@ found. The single miss sits in the 32–64 px band.
 
 ```
 video/camera ──▶ FrameSource ──▶ Detector ──▶ Tracker ──▶ per-track crop buffer
-                 (file/cam/rtsp)   (YOLO)     (ByteTrack)          │
+                 (file/cam/rtsp)   (YOLO)      (IoU)             │
                                                                    ▼
    Excel log ◀── Deduplicator ◀── Validator ◀── Voter ◀────────── OCR
    (openpyxl)    (cooldown)       (IN / DE)   (multi-frame)   (PaddleOCR)
@@ -130,7 +140,7 @@ python3 -m venv .venv && source .venv/bin/activate && pip install -e ".[dev]"
 
 ```bash
 alpr env      # interpreter, Colab and GPU status
-pytest        # 368 tests
+pytest        # 485 tests
 ```
 
 GPU work runs on **Google Colab (T4)** — every notebook is self-contained and rebuilds whatever
@@ -159,7 +169,7 @@ CI test both refuse credential-shaped strings in the repo.
 | 5 | Plate grammars (India, Germany) | ✅ |
 | 6 | Tracking + multi-frame voting | ✅ |
 | 7 | Excel logging + deduplication | ✅ |
-| 8 | End-to-end evaluation | — |
+| 8 | End-to-end evaluation | blocked on labels |
 | 9 | Live webcam / RTSP (Apple Silicon, MPS) | ✅ |
 
 See [ROADMAP.md](ROADMAP.md) for the full plan and each phase's exit criteria.
@@ -198,7 +208,7 @@ alpr run --source clip.mp4 --ocr-every 1                    # offline, most accu
 | `src/alpr/` | The package — all logic worth testing lives here |
 | `notebooks/` | Thin Colab drivers; no business logic |
 | `configs/` | Training config, committed for reproducibility |
-| `tests/` | 368 tests, run in CI without a GPU |
+| `tests/` | 485 tests, run in CI without a GPU |
 
 Notebooks stay thin on purpose: anything worth testing belongs in `src/alpr/`, so Colab never
 becomes the place where the real code lives.

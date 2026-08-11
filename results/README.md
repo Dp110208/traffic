@@ -16,7 +16,11 @@ between minor releases, so the config alone does not pin a run — reproducing
 this result needs the arguments *and* the library version that consumed them.
 
 **The weights are not here.** `best.pt` is 22.5 MB, and binaries do not belong
-in git history where they can never be removed. It lives outside the repo.
+in git history where they can never be removed. They are published on the Hub:
+[Babblu2821/alpr-plate-detector](https://huggingface.co/Babblu2821/alpr-plate-detector).
+
+`MODEL_CARD.md` is the source of that repo's README — edit it here and re-upload,
+so the two cannot drift.
 
 ## The run
 
