@@ -21,21 +21,23 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# OCR stack. Colab-only by construction: PaddlePaddle's GPU build is CUDA-only
-# and has no macOS wheel.
+# OCR stack, resolved in Phase 4 and installable everywhere from PyPI.
 #
-# NOT installable from PyPI alone, and deliberately left out of the bootstrap
-# notebook. PyPI's paddlepaddle-gpu stops at 2.6.2, while current paddleocr
-# (3.x) requires PaddlePaddle 3.x, whose GPU wheels are published on Paddle's
-# own index. Installing this extra needs that index:
+# An earlier version of this file assumed the OCR stack was Colab-only. That
+# was wrong, and it was wrong in a way that shaped the plan: only
+# `paddlepaddle-gpu` is frozen at 2.6.2 with no macOS wheel. The CPU build,
+# `paddlepaddle`, ships 3.3.1 wheels for cp39-cp313 on macOS arm64, Linux and
+# Windows — verified installing and running here on macOS/Python 3.13.
+#
+# CPU is the right default regardless of hardware. Recognition runs on a plate
+# crop of a few thousand pixels, not a full frame, so the GPU has almost
+# nothing to accelerate. For CUDA anyway, install the GPU build first from
+# Paddle's own index, which is not on PyPI:
 #
 #   pip install paddlepaddle-gpu -i https://www.paddlepaddle.org.cn/packages/stable/cu126/
-#   pip install -e ".[gpu]"
-#
-# Phase 4 pins the exact working pair once it has been run on a T4. Until then
-# nothing imports paddle, so nothing before Phase 4 is blocked by this.
-gpu = [
-    "paddleocr>=3.0",
+ocr = [
+    "paddlepaddle>=3.3",
+    "paddleocr>=3.7",
 ]
 # Local live-camera modes (Phase 9). Needs the GUI build of OpenCV, which
 # conflicts with the headless wheel above, so it is never installed alongside gpu.

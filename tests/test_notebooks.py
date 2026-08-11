@@ -47,16 +47,17 @@ class TestNotebook:
             "Clear outputs before saving from Colab (Edit > Clear all outputs)."
         )
 
-    def test_does_not_install_the_gpu_extra(self, path):
-        # The `gpu` extra cannot resolve from PyPI: paddlepaddle-gpu stops at
-        # 2.6.2 while paddleocr 3.x needs PaddlePaddle 3.x from Paddle's own
-        # index. Phase 4 will install it deliberately, against that index.
+    def test_does_not_install_a_nonexistent_extra(self, path):
+        # The `gpu` extra was removed in Phase 4: only `paddlepaddle-gpu` was
+        # unresolvable, and the CPU build installs from PyPI everywhere. The
+        # OCR stack now lives in `[ocr]`. A notebook still asking for `[gpu]`
+        # would fail at install time on a fresh runtime.
         for i, cell in enumerate(_cells(path)):
             src = _source(cell)
             if "pip install" in src and ".[gpu]" in src:
                 pytest.fail(
-                    f"{path.name} cell {i} installs the gpu extra, which cannot "
-                    "resolve on Colab. Use `pip install -e .` until Phase 4."
+                    f"{path.name} cell {i} installs the removed `gpu` extra. "
+                    'Use `pip install -e .` or `-e ".[ocr]"`.'
                 )
 
     def test_contains_no_credential_shaped_token(self, path):
