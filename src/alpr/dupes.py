@@ -216,3 +216,71 @@ def find_duplicates(
         pairs=pairs,
         threshold=threshold,
     )
+
+
+def duplicate_clusters(report: DuplicateReport) -> dict[str, str]:
+    """Map each duplicated image to a shared cluster id.
+
+    Union-find over the duplicate pairs, so a chain of near-matches (A~B,
+    B~C) becomes one cluster even when A and C are not directly similar
+    enough to pair. Splitting a chain would leak exactly as badly as
+    splitting a pair.
+
+    Returns:
+        `{image_id: cluster_id}` for images in a cluster of two or more.
+        Images with no duplicates are absent.
+    """
+    parent: dict[str, str] = {}
+
+    def find(x: str) -> str:
+        parent.setdefault(x, x)
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    def union(a: str, b: str) -> None:
+        root_a, root_b = find(a), find(b)
+        if root_a != root_b:
+            # Lowest id wins, so cluster ids are stable across runs.
+            low, high = sorted((root_a, root_b))
+            parent[high] = low
+
+    for pair in report.pairs:
+        union(pair.left, pair.right)
+
+    return {image: f"dup:{find(image)}" for image in parent}
+
+
+def regroup_by_duplicates(
+    records: Sequence[ImageRecord], report: DuplicateReport
+) -> list[ImageRecord]:
+    """Return records with duplicates forced into the same split group.
+
+    This is the general fix for split leakage. Filename-based grouping only
+    catches what a filename admits to; two copies of one photograph under
+    unrelated names, or frames a naming convention does not mark, are
+    invisible to it. Hashing sees all of them.
+
+    Records not in any duplicate cluster are returned unchanged.
+    """
+    from dataclasses import replace
+
+    clusters = duplicate_clusters(report)
+    return [
+        replace(record, group=clusters[record.image_id]) if record.image_id in clusters else record
+        for record in records
+    ]
+
+
+def clean_subset(
+    records: Sequence[ImageRecord], report: DuplicateReport, split: Split
+) -> list[ImageRecord]:
+    """Records from `split` that have no near-duplicate in train.
+
+    A valid uncontaminated evaluation set for a model that has *already* been
+    trained: these images were genuinely unseen, so scoring them needs no
+    retraining. The rest were effectively memorized.
+    """
+    contaminated = report.contaminated_images(split)
+    return [r for r in records if r.image_id not in contaminated]

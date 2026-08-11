@@ -138,7 +138,21 @@ class PlateBox:
 
 # A frame filename like "clip_042_frame_0137.jpg" belongs to clip_042. Frames
 # from one clip are near-duplicates, so they must not straddle a split.
-_FRAME_SUFFIX = re.compile(r"[_-]?frame[_-]?\d+$", re.IGNORECASE)
+# Frame filenames come in more than one shape. `clip_042_frame_0137` is the
+# obvious one; Roboflow exports video frames as `dayride_type1_001-mp4-t-1062`,
+# which the `frame` pattern alone does not match — and that miss put frames
+# 1062 and 1063 of one clip on opposite sides of a train/test split.
+#
+# Both alternatives require an explicit marker (`frame`, or a video extension
+# followed by a timecode). A bare trailing-number rule would be far more
+# dangerous than useful: it would collapse `license_plate_205` and
+# `license_plate_242` into one group and hand most of the dataset to a single
+# split. Perceptual duplicate grouping in `alpr.dupes` is the general safety
+# net; this only catches what a filename can prove.
+_FRAME_SUFFIX = re.compile(
+    r"[_-](?:mp4|avi|mov|mkv|webm)[_-]t[_-]\d+$|[_-]?frame[_-]?\d+$",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
