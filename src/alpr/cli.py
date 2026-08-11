@@ -66,6 +66,32 @@ def _cmd_run(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_label(args: argparse.Namespace) -> int:
+    from alpr.data import Split, read_manifest, split_records
+    from alpr.label import build_page, extract_crops
+
+    records = read_manifest(args.manifest)
+    if args.split:
+        assignment = split_records(records, seed=args.seed)
+        records = assignment.partition(records)[Split(args.split)]
+
+    refs = extract_crops(records, args.images, args.out, limit=args.limit, seed=args.seed)
+    if not refs:
+        print("error: no crops extracted — check --images points at the frames", file=sys.stderr)
+        return 1
+
+    page = build_page(args.out)
+    buckets: dict[str, int] = {}
+    for ref in refs:
+        buckets[ref.bucket] = buckets.get(ref.bucket, 0) + 1
+
+    print(f"{len(refs)} crops -> {args.out}")
+    for bucket, count in sorted(buckets.items()):
+        print(f"  {bucket:<20} {count}")
+    print(f"\nopen {page} in a browser, type the plates, then Download labels.json")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="alpr", description=__doc__)
     parser.add_argument("--version", action="version", version=f"alpr {__version__}")
@@ -112,6 +138,22 @@ def build_parser() -> argparse.ArgumentParser:
     run_cmd.add_argument("--confidence", type=float, default=0.25)
     run_cmd.add_argument("--max-frames", type=int, default=None, dest="max_frames")
     run_cmd.set_defaults(func=_cmd_run)
+
+    label_cmd = sub.add_parser(
+        "label", help="extract plate crops and build a page for hand-labelling"
+    )
+    label_cmd.add_argument("--manifest", default="data/manifest.jsonl")
+    label_cmd.add_argument("--images", default="data/raw", help="frame root")
+    label_cmd.add_argument("--out", default="labels", help="where crops and the page go")
+    label_cmd.add_argument(
+        "--split",
+        choices=["train", "val", "test"],
+        default="test",
+        help="label crops from this split (test is what CER should be measured on)",
+    )
+    label_cmd.add_argument("--limit", type=int, default=200)
+    label_cmd.add_argument("--seed", type=int, default=0)
+    label_cmd.set_defaults(func=_cmd_label)
 
     return parser
 
