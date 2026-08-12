@@ -140,7 +140,7 @@ class TestPipeline:
         pipeline.run(
             FakeSource(6),
             tmp_path / "log.xlsx",
-            on_frame=lambda f, d, t: seen.append(f.index),
+            on_frame=lambda f, d, t, texts: seen.append(f.index),
         )
         assert seen == [0, 1, 2, 3, 4, 5]
 

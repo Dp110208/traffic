@@ -138,9 +138,15 @@ class Pipeline:
             source: where frames come from.
             out: the workbook to write.
             max_frames: stop early, for smoke tests.
-            on_frame: called as `on_frame(frame, detections, tracks)` — used by
-                the live viewer to draw an overlay without this module needing
-                to know anything about windows.
+            on_frame: called as `on_frame(frame, detections, tracks, texts)`
+                where `texts` maps track id to the vote *so far*. The viewer
+                uses it to draw an overlay without this module needing to know
+                anything about windows — and the converging vote is the part
+                worth watching, so it is passed rather than left inside.
+
+        Returns:
+            The run's statistics. Stops early if `on_frame` returns False,
+            which is how the viewer's quit key ends a live run.
         """
         from PIL import Image
 
@@ -187,7 +193,13 @@ class Pipeline:
                 timings["log"] += time.time() - mark
 
                 if on_frame is not None:
-                    on_frame(frame, detections, tracks)
+                    texts = {}
+                    for track in tracks:
+                        voted = voter.result(track.track_id)
+                        if voted is not None:
+                            texts[track.track_id] = voted.text
+                    if on_frame(frame, detections, tracks, texts) is False:
+                        break
 
             tracker.finish()
             self._emit(tracker, voter, log, stats, time.time(), source.name)
