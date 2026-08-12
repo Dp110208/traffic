@@ -133,13 +133,13 @@ with every plate attributed to the stage that lost it:
 
 | | count | share |
 |---|---|---|
-| correct | 53 | 42.7% |
+| correct | 72 | 58.1% |
 | **detection miss** | **0** | **0%** |
-| grammar rejected | 50 | 40.3% |
-| OCR error | 18 | 14.5% |
-| grammar corrupted a correct read | 3 | 2.4% |
+| grammar rejected | 30 | 24.2% |
+| OCR error | 21 | 16.9% |
+| grammar corrupted a correct read | 1 | 0.8% |
 
-End-to-end accuracy **42.7%**, precision **71.6%** of the 74 plates it chose to log.
+End-to-end accuracy **58.1%**, precision **76.6%** of the 94 plates it chose to log.
 
 **Detection lost nothing.** Not one of the 124 plates was missed — consistent with the detector's
 0.998 recall. Every remaining failure is a reading failure, so more detector training would buy
@@ -149,17 +149,35 @@ Split by region, the pattern from the OCR section repeats and sharpens:
 
 | | correct | rejected | OCR error | corrupted |
 |---|---|---|---|---|
-| **Indian** (65) | **67.7%** | 13.8% | 18.5% | 0% |
-| **European** (59) | 15.3% | 69.5% | 10.2% | 5.1% |
+| **Indian** (65) | 67.7% | 13.8% | 18.5% | 0% |
+| **European** (59) | 47.5% | 32.2% | 18.6% | 1.7% |
+| — of which **Polish** (18) | **72.2%** | 11.1% | 16.7% | 0% |
 
-Two thirds of European plates are **refused rather than misread**. The grammars model India and
-Germany; that dataset is full of Polish and Norwegian plates, and the pipeline correctly declines
-to log a string it cannot validate. That is the design working — precision stays at 71.6%
-*because* it refuses — but it caps recall hard on unmodelled formats.
+### Adding one grammar was worth more than any model change
 
-The 3 corrupted reads are all Polish plates forced toward German structure
-(`P74103` → `PT4103`, `WA11003` → `WAI1003`, `ERBUG19` → `ERBU619`). A grammar applied outside
-its region does damage, not just nothing.
+The first end-to-end run scored **42.7%**, with European plates at 15.3% and two thirds of them
+*refused rather than misread* — the grammars modelled India and Germany while the dataset is full
+of Polish plates. So Poland was modelled next. Nothing about the detector or the OCR engine
+changed:
+
+| | end-to-end | European | Polish | precision |
+|---|---|---|---|---|
+| India + Germany | 42.7% | 15.3% | — | 71.6% |
+| + Polish standard | 50.0% | 30.5% | 50.0% | 71.3% |
+| + Polish individual plates | **58.1%** | **47.5%** | **72.2%** | **76.6%** |
+
+**+15 points end to end, and precision rose too** — usually those trade against each other.
+
+Polish plates now score *higher than Indian ones*, and the reason is in the format: Poland bans
+**B, D, I, O and Z from the series** precisely because they resemble digits. The country removed
+the ambiguity at the design stage, so a `B` there is not a probable `8` but a certain one. That
+is the cleanest case in this project of a real-world format encoding exactly the constraint an
+OCR pipeline needs.
+
+Modelling individual (vanity) plates mattered for a reason measurement found rather than
+foresight: every corrupted read was a 1-letter Polish plate that a *single* edit pushed into the
+2-letter standard shape — `P74103` → `PT4103`, `W2515T` → `WZ515T`. The grammar was inventing a
+standard plate out of a valid individual one. Corruptions fell from 3 to 1.
 
 ### Two bugs this found
 

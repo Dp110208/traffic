@@ -33,6 +33,7 @@ class Region(StrEnum):
 
     INDIA = "IN"
     GERMANY = "DE"
+    POLAND = "PL"
     EUROPE = "EU"
     UNKNOWN = "XX"
 
