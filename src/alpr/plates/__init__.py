@@ -26,15 +26,18 @@ from alpr.plates.correct import (
 )
 from alpr.plates.germany import DISTRICT_PREFIXES, GermanyFormat
 from alpr.plates.india import STATE_CODES, IndiaFormat
+from alpr.plates.poland import VOIVODESHIPS, PolandFormat
 
 INDIA = IndiaFormat()
 GERMANY = GermanyFormat()
+POLAND = PolandFormat()
 
-FORMATS: list[PlateFormat] = [INDIA, GERMANY]
+FORMATS: list[PlateFormat] = [INDIA, GERMANY, POLAND]
 
 FORMATS_BY_REGION: dict[Region, PlateFormat] = {
     Region.INDIA: INDIA,
     Region.GERMANY: GERMANY,
+    Region.POLAND: POLAND,
 }
 
 
@@ -78,11 +81,14 @@ __all__ = [
     "FORMATS_BY_REGION",
     "GERMANY",
     "INDIA",
+    "POLAND",
+    "VOIVODESHIPS",
     "LETTER_TO_DIGITS",
     "MIN_CONFIDENCE",
     "STATE_CODES",
     "GermanyFormat",
     "IndiaFormat",
+    "PolandFormat",
     "PlateFormat",
     "PlateMatch",
     "alternatives",
