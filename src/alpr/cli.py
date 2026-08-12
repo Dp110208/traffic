@@ -42,11 +42,21 @@ def _cmd_train(args: argparse.Namespace) -> int:
 
 
 def _cmd_run(args: argparse.Namespace) -> int:
+    from pathlib import Path
+
     from alpr.data.schema import Region
     from alpr.detect import PlateDetector
     from alpr.ocr import PlateReader
     from alpr.pipeline import Pipeline, PipelineConfig
     from alpr.sources import SourceError, open_source
+
+    if args.fresh:
+        # A run resumes an existing log by design — the journal is what makes
+        # an interrupted run recoverable. That is surprising when demoing the
+        # same clip twice, so this starts clean on request.
+        out = Path(args.out)
+        out.unlink(missing_ok=True)
+        out.with_suffix(out.suffix + ".jsonl").unlink(missing_ok=True)
 
     try:
         detector = PlateDetector(args.weights, device=args.device)
@@ -56,9 +66,32 @@ def _cmd_run(args: argparse.Namespace) -> int:
             confidence=args.confidence,
         )
         pipeline = Pipeline(detector, PlateReader(), config)
+
+        from alpr.viewer import Viewer, ViewerError, annotate
+
         with open_source(args.source) as source:
-            stats = pipeline.run(source, args.out, max_frames=args.max_frames)
-    except (SourceError, FileNotFoundError) as exc:
+            fps = getattr(source, "fps", 0) or 20.0
+            viewer = Viewer(show=args.show, save_path=args.save_video, fps=fps)
+
+            def draw(frame, detections, tracks, texts):
+                if not viewer.active:
+                    return True
+                hud = [f"frame {frame.index}", f"tracks {len(tracks)}"]
+                annotate(frame.image, detections, tracks, texts, hud)
+                return viewer.push(frame.image)
+
+            try:
+                stats = pipeline.run(
+                    source,
+                    args.out,
+                    max_frames=args.max_frames,
+                    on_frame=draw if viewer.active else None,
+                )
+            finally:
+                viewer.close()
+            if viewer.save_path:
+                print(f"annotated video: {viewer.save_path}\n")
+    except (SourceError, ViewerError, FileNotFoundError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 
@@ -166,6 +199,22 @@ def build_parser() -> argparse.ArgumentParser:
     )
     run_cmd.add_argument("--confidence", type=float, default=0.25)
     run_cmd.add_argument("--max-frames", type=int, default=None, dest="max_frames")
+    run_cmd.add_argument(
+        "--show",
+        action="store_true",
+        help="open a live window with boxes and plate text (needs a GUI OpenCV build)",
+    )
+    run_cmd.add_argument(
+        "--fresh",
+        action="store_true",
+        help="delete an existing log first instead of appending to it",
+    )
+    run_cmd.add_argument(
+        "--save-video",
+        default=None,
+        dest="save_video",
+        help="write an annotated mp4; works without a display and is shareable",
+    )
     run_cmd.set_defaults(func=_cmd_run)
 
     label_cmd = sub.add_parser(

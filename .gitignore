@@ -32,7 +32,9 @@ labels.zip
 outputs/
 runs/
 *.xlsx
+*.xlsx.jsonl
 !tests/fixtures/*.xlsx
+*.xlsx.jsonl
 
 # Local media — clips are large and often contain personal data (GDPR).
 *.mp4
