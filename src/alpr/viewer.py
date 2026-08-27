@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Any
 
 from alpr.detect import Detection
-
+import cv2
 # BGR, because that is what OpenCV wants.
 CONFIRMED = (80, 220, 100)  # green: a track that cleared min_hits
 PENDING = (140, 140, 140)  # grey: seen once, probably a false positive
@@ -113,30 +113,89 @@ def annotate(
     tracks: Sequence[Any] = (),
     texts: Mapping[int, str] | None = None,
     hud: Sequence[str] = (),
+    vehicles: Sequence[Any] = (),
 ):
-    """Draw a frame's detections, tracks and current plate readings.
+    """Draw plates and vehicles on the frame."""
 
-    Args:
-        frame: BGR image; modified in place and returned.
-        detections: everything the detector found this frame.
-        tracks: confirmed tracks, which get ids and text.
-        texts: `{track_id: plate text so far}` — the vote as it converges,
-            which is the part worth watching.
-        hud: status lines for the corner panel.
-    """
+    import cv2
+
     texts = texts or {}
 
-    # Unconfirmed detections first and in grey, so a confirmed box drawn over
-    # one is the thing that stands out.
+    # -------------------------
+    # PLATE DETECTIONS
+    # -------------------------
+
     tracked = {id(t.detection) for t in tracks}
+
     for detection in detections:
         if id(detection) not in tracked:
-            draw_box(frame, detection, PENDING, thickness=1)
+            draw_box(
+                frame,
+                detection,
+                PENDING,
+                thickness=1
+            )
+
+    # -------------------------
+    # CONFIRMED PLATE TRACKS
+    # -------------------------
 
     for track in tracks:
         text = texts.get(track.track_id, "")
-        label = f"#{track.track_id}" + (f"  {text}" if text else "")
-        draw_box(frame, track.detection, CONFIRMED, label)
+
+        label = f"#{track.track_id}"
+
+        if text:
+            label += f"  {text}"
+
+        draw_box(
+            frame,
+            track.detection,
+            CONFIRMED,
+            label
+        )
+
+    # -------------------------
+    # VEHICLES
+    # -------------------------
+
+    for vehicle in vehicles:
+
+        x1, y1, x2, y2 = vehicle["box"]
+
+        vehicle_type = vehicle.get(
+            "type",
+            "unknown"
+        )
+
+        vehicle_color = vehicle.get(
+            "color",
+            "unknown"
+        )
+
+        label = (
+            f"{vehicle_type.upper()} | "
+            f"{vehicle_color.upper()}"
+        )
+
+        cv2.rectangle(
+            frame,
+            (x1, y1),
+            (x2, y2),
+            (0, 255, 255),
+            2,
+        )
+
+        cv2.putText(
+            frame,
+            label,
+            (x1, max(25, y1 - 8)),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.6,
+            (0, 255, 255),
+            2,
+            cv2.LINE_AA,
+        )
 
     return draw_hud(frame, hud)
 

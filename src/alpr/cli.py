@@ -77,11 +77,18 @@ def _cmd_run(args: argparse.Namespace) -> int:
             fps = getattr(source, "fps", 0) or 20.0
             viewer = Viewer(show=args.show, save_path=args.save_video, fps=fps)
 
-            def draw(frame, detections, tracks, texts):
+            def draw(frame, detections, tracks, texts, vehicles):
                 if not viewer.active:
                     return True
                 hud = [f"frame {frame.index}", f"tracks {len(tracks)}"]
-                annotate(frame.image, detections, tracks, texts, hud)
+                annotate(
+    frame.image,
+    detections,
+    tracks,
+    texts,
+    hud,
+    vehicles,
+)
                 return viewer.push(frame.image)
 
             try:
@@ -203,6 +210,12 @@ def build_parser() -> argparse.ArgumentParser:
     run_cmd.add_argument(
         "--device", default=None, help="cuda index, 'mps' or 'cpu' (auto-detected)"
     )
+    run_cmd.add_argument(
+    "--imgsz",
+    type=int,
+    default=640,
+    help="YOLO inference image size; smaller is faster on CPU",
+)
     run_cmd.add_argument(
         "--region",
         choices=["IN", "DE"],

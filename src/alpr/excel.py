@@ -50,6 +50,14 @@ COLUMNS: tuple[tuple[str, str, int], ...] = (
     ("frame", "Frame", 9),
     ("source", "Source", 28),
     ("crop_path", "Crop", 30),
+
+    # Vehicle intelligence
+    ("vehicle_type", "Vehicle Type", 16),
+    ("vehicle_confidence", "Vehicle Confidence", 18),
+    ("person_count", "Person Count", 14),
+    ("vehicle_color", "Vehicle Color", 16),
+    ("helmet_status", "Helmet Status", 18),
+    ("violation", "Violation", 30),
 )
 
 _HEADER_FILL = PatternFill("solid", fgColor="DDDDDD")
@@ -69,6 +77,15 @@ class PlateEvent:
     frame: int | None = None
     source: str | None = None
     crop_path: str | None = None
+
+    # Vehicle intelligence
+    vehicle_type: str = ""
+    vehicle_confidence: float = 0.0
+    person_count: int = 0
+    vehicle_color: str = ""
+    helmet_status: str = ""
+    violation: str = ""
+
     extra: dict[str, str] = field(default_factory=dict)
 
     def to_json(self) -> str:

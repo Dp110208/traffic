@@ -17,8 +17,9 @@ sharpest one, not whichever frame happens to come next.
 """
 
 from __future__ import annotations
-
+from alpr.vehicle import VehicleDetector
 import time
+
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -130,15 +131,18 @@ class PipelineStats:
 class Pipeline:
     """Runs detection, tracking, OCR, voting, validation and logging."""
 
+
     def __init__(
-        self,
-        detector: PlateDetector,
-        reader: PlateReader,
-        config: PipelineConfig | None = None,
+     self,
+     detector: PlateDetector,
+     reader: PlateReader,
+     config: PipelineConfig | None = None,
     ) -> None:
-        self.detector = detector
-        self.reader = reader
-        self.config = config or PipelineConfig()
+     self.detector = detector
+     self.reader = reader
+     self.vehicle_detector = VehicleDetector()
+     self.config = config or PipelineConfig()
+        
 
     def run(
         self,
@@ -190,7 +194,9 @@ class Pipeline:
                 origin = frame.source_name or source.name
 
                 mark = time.time()
+                vehicles = self.vehicle_detector.detect(frame.image)
                 detections = self.detector.detect(frame.image, confidence=config.confidence)
+                vehicles = self.vehicle_detector.detect(frame.image)
                 timings["detect"] += time.time() - mark
                 stats.detections += len(detections)
 
@@ -233,9 +239,9 @@ class Pipeline:
                         voted = voter.result(track.track_id)
                         if voted is not None:
                             texts[track.track_id] = voted.text
-                    if on_frame(frame, detections, tracks, texts) is False:
+                    if on_frame(frame, detections, tracks, texts, vehicles) is False:
                         break
-
+                    
             tracker.finish()
             self._emit(tracker, voter, log, stats, time.time(), origin)
             stats.suppressed = log.suppressed
